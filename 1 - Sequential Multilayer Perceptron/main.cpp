@@ -6,11 +6,11 @@
 #include <string>
 #include "NeuralNetwork.hpp"
  
-void genData(std::string filename)
+void genData(std::string filename, int size)
 {
     std::ofstream file1(filename + "-in");
     std::ofstream file2(filename + "-out");
-    for (uint r = 0; r < 100000; r++) {
+    for (uint r = 0; r < size; r++) {
         Scalar x = rand() / Scalar(RAND_MAX);
         Scalar y = rand() / Scalar(RAND_MAX);
         Scalar z = rand() / Scalar(RAND_MAX);
@@ -53,13 +53,7 @@ void ReadCSV(std::string filename, std::vector<RowVector*>& data)
     }
 }
 
-typedef std::vector<RowVector*> data;
-int main(int argc, char *argv[])
-{
-    std::vector<uint> hiddenLayers;
-    data in_dat, out_dat;
-    bool noGenData = false;
-
+void readArguments(int argc, char *argv[], std::vector<uint>* hiddenLayers, bool* noGenData, int* dataSize){
     if( argc > 1 ){
         int i = 1;
         while( i < argc ){
@@ -71,20 +65,35 @@ int main(int argc, char *argv[])
                
                 int limit = i + quantity - 1;
                 for( i; i <= limit; i++ ){
-                    hiddenLayers.push_back(std::stoi(argv[i]));
+                    (*hiddenLayers).push_back(std::stoi(argv[i]));
                 }
             }else if( !argument.compare("--noGenData") ){
-                noGenData = true;
+                (*noGenData) = true;
                 ++i;
+            }else if( !argument.compare("--dataSize") ){
+                (*dataSize) = std::stoi(argv[i+1]);
+                i += 2;
             }else {
                 std::cout << "Unknown parameter: " << argv[i] << "\n";
-                return 0;
+                exit(3);
             }            
         }
     }
+}
+
+typedef std::vector<RowVector*> data;
+int main(int argc, char *argv[])
+{
+    data in_dat, out_dat;
+    std::vector<uint> hiddenLayers;
+    bool noGenData = false;
+    int dataSize = 1000000;
+
+    readArguments(argc, argv, &hiddenLayers, &noGenData, &dataSize);
 
     if(!noGenData){
-        genData("./data/data");
+        std::cout << "Generating data: " << dataSize << " rows!" << std::endl;
+        genData("./data/data", dataSize);
     }
 
     ReadCSV("./data/data-in", in_dat);

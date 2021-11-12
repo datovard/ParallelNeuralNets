@@ -31,3 +31,9 @@ You can run and experiment with this project more easily with this [Colab projec
 
        ./main  --noGenData
 
+5. To set the size of the generated dataset, you can pass the flag:
+  
+       ./main  --dataSize 1000
+    
+    Where the `1000` value can be changed for any size you want!
+
