@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
     data in_dat, out_dat;
     std::vector<uint> hiddenLayers;
     bool noGenData = false;
-    int dataSize = 1000000;
+    int dataSize = 100000;
 
     readArguments(argc, argv, &hiddenLayers, &noGenData, &dataSize);
 
@@ -101,9 +101,15 @@ int main(int argc, char *argv[])
 
     std::vector<uint> topology;
     topology.push_back(in_dat[0]->size());
-    for( int i = 0; i < hiddenLayers.size(); i++ ){
-        topology.push_back(hiddenLayers[i]);
+
+    if( hiddenLayers.size() == 0 ){
+        topology.push_back(in_dat[0]->size());
+    } else {
+        for( int i = 0; i < hiddenLayers.size(); i++ ){
+            topology.push_back(hiddenLayers[i]);
+        }
     }
+
     topology.push_back(out_dat[0]->size());
 
     NeuralNetwork n(topology);
