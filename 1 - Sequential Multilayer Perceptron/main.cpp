@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <sys/time.h>
 #include "NeuralNetwork.hpp"
  
 void genData(std::string filename, int size)
@@ -88,6 +89,9 @@ int main(int argc, char *argv[])
     std::vector<uint> hiddenLayers;
     bool noGenData = false;
     int dataSize = 100000;
+    struct timeval tval_before, tval_after, tval_result;
+ 
+    
 
     readArguments(argc, argv, &hiddenLayers, &noGenData, &dataSize);
 
@@ -112,7 +116,14 @@ int main(int argc, char *argv[])
 
     topology.push_back(out_dat[0]->size());
 
+    gettimeofday(&tval_before, NULL);
+
     NeuralNetwork n(topology);
     n.train(in_dat, out_dat);
+
+    gettimeofday(&tval_after, NULL);
+    timersub(&tval_after, &tval_before, &tval_result);
+
+    printf("Time elapsed training: %ld.%06ld\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);  
     return 0;
 }
