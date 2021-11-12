@@ -15,7 +15,7 @@ void genData(std::string filename)
         Scalar y = rand() / Scalar(RAND_MAX);
         Scalar z = rand() / Scalar(RAND_MAX);
         file1 << x << ", " << y << ", " << z << std::endl;
-        file2 << (2 * x + 10 + y + 5 * z) << std::endl;
+        file2 << (2 * x + 10 * y + 5 * z) << std::endl;
     }
     file1.close();
     file2.close();
