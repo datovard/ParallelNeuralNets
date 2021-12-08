@@ -3,46 +3,50 @@
 #include <iostream>
 #include <vector>
  
-// use typedefs for future ease for changing data types like : float to double
-typedef double Scalar;
-typedef Eigen::MatrixXf Matrix;
-typedef Eigen::RowVectorXf RowVector;
-typedef Eigen::VectorXf ColVector;
- 
+using namespace std;
+
 // neural network implementation class!
 class NeuralNetwork {
 public:
+    int width;
+    int height;
+    int n1;
+    int n2 = 128; 
+    int n3;
+    const int epochs = 512;
+    const double learning_rate = 1e-3;
+    const double momentum = 0.9;
+    const double epsilon = 1e-3;
+
+    // From layer 1 to layer 2. Or: Input layer - Hidden layer
+    double **w1, **delta1, *out1;
+
+    // From layer 2 to layer 3. Or; Hidden layer - Output layer
+    double **w2, **delta2, *in2, *out2, *theta2;
+
+    // Layer 3 - Output layer
+    double *in3, *out3, *theta3;
+    double *expected;
+    
     // constructor
-    NeuralNetwork(std::vector<uint> topology, Scalar learningRate = Scalar(0.005));
+    NeuralNetwork(int input_size, int label_size);
  
     // function for forward propagation of data
-    void propagateForward(RowVector& input);
+    void propagateForward();
  
     // function for backward propagation of errors made by neurons
-    void propagateBackward(RowVector& output);
+    void propagateBackward();
  
     // function to calculate errors made by neurons in each layer
-    void calcErrors(RowVector& output);
- 
-    // function to update the weights of connections
-    void updateWeights();
+    double calculateErrors();
  
     // function to train the neural network give an array of data points
-    void train(std::vector<RowVector*> data, std::vector<RowVector*> output_data);
+    int train();
 
-    // storage objects for working of neural network
-    /*
-          use pointers when using std::vector<Class> as std::vector<Class> calls destructor of
-          Class as soon as it is pushed back! when we use pointers it can't do that, besides
-          it also makes our neural network class less heavy!! It would be nice if you can use
-          smart pointers instead of usual ones like this
-        */
-    std::vector<RowVector*> neuronLayers; // stores the different layers of out network
-    std::vector<RowVector*> cacheLayers; // stores the unactivated (activation fn not yet applied) values of layers
-    std::vector<RowVector*> deltas; // stores the error contribution of each neurons
-    std::vector<Matrix*> weights; // the connection weights itself
-    Scalar learningRate;
-    double MSE;
-    std::vector<uint> topology;
+    void write_matrix(string file_name);
+
+    void updateInput(bool* referenceInput);
+    
+    void updateExpectedOutput(bool* referenceOutput);
 };
 

@@ -5,125 +5,206 @@
 #include <iostream>
 #include <string>
 #include <sys/time.h>
+#include <chrono>
+#include <thread>
 #include "NeuralNetwork.hpp"
- 
-void genData(std::string filename, int size)
-{
-    std::ofstream file1(filename + "-in");
-    std::ofstream file2(filename + "-out");
-    for (uint r = 0; r < size; r++) {
-        Scalar x = rand() / Scalar(RAND_MAX);
-        Scalar y = rand() / Scalar(RAND_MAX);
-        Scalar z = rand() / Scalar(RAND_MAX);
-        file1 << x << ", " << y << ", " << z << std::endl;
-        file2 << (2 * x + 10 * y + 5 * z) << std::endl;
-    }
-    file1.close();
-    file2.close();
-}
 
-void ReadCSV(std::string filename, std::vector<RowVector*>& data)
+using namespace std;
+using namespace std::this_thread;
+using namespace std::chrono;
+
+// Weights file name
+const string model_fn = "output/model-neural-network-exec-";
+
+// Report file name
+const string report_fn = "output/training-report.dat";
+
+// Number of training samples
+int nTraining = 60000;
+
+// File stream to write down a report
+ofstream report;
+
+int ReadCSV(std::string filename, bool** in_dat)
 {
-    data.clear();
     std::ifstream file(filename);
     std::string line, word;
+
     // determine number of columns in file
     getline(file, line, '\n');
     std::stringstream ss(line);
-    std::vector<Scalar> parsed_vec;
+    std::vector<bool> parsed_vec;
+
     while (getline(ss, word, ',')) {
-        parsed_vec.push_back(Scalar(std::stof(&word[0])));
+        parsed_vec.push_back( (bool) (std::stoi(&word[0]))) ;
     }
     uint cols = parsed_vec.size();
-    data.push_back(new RowVector(cols));
-    for (uint i = 0; i < cols; i++) {
-        data.back()->coeffRef(1, i) = parsed_vec[i];
+    in_dat[0] = new bool[cols];
+    for(int i = 0; i < cols; i++){
+        in_dat[0][i] = parsed_vec[i];
     }
  
     // read the file
+    int i = 1;
     if (file.is_open()) {
-        while (getline(file, line, '\n')) {
+        while (getline(file, line, '\n') && i < nTraining) {
             std::stringstream ss(line);
-            data.push_back(new RowVector(1, cols));
-            uint i = 0;
+
+            in_dat[i] = new bool[cols];
+            uint j = 0;
             while (getline(ss, word, ',')) {
-                data.back()->coeffRef(i) = Scalar(std::stof(&word[0]));
-                i++;
+                in_dat[i][j] = (bool) std::stoi(&word[0]);
+                j++;
+            }
+            i++;
+        }
+    }
+    return cols;
+}
+
+void createCSVs(){
+    const string training_image_fn = "../data/train-images.idx3-ubyte";
+    const string training_label_fn = "../data/train-labels.idx1-ubyte";
+    const string training_inputs_out = "input/training_input.csv";
+    const string training_labels_out = "input/training_labels.csv";
+
+    const string testing_image_fn = "../data/t10k-images.idx3-ubyte";
+    const string testing_label_fn = "../data/t10k-labels.idx1-ubyte";
+    const string testing_inputs_out = "input/testing_input.csv";
+    const string testing_labels_out = "input/testing_labels.csv";
+
+    ifstream training_image, testing_image;
+    ifstream training_label, testing_label;
+    ofstream training_inputs, testing_inputs;
+    ofstream training_labels, testing_labels;
+
+    training_inputs.open(training_inputs_out.c_str(), ios::out);
+    training_labels.open(training_labels_out.c_str(), ios::out);
+    training_image.open(training_image_fn.c_str(), ios::in | ios::binary); // Binary image file
+    training_label.open(training_label_fn.c_str(), ios::in | ios::binary ); // Binary label file
+
+    testing_inputs.open(testing_inputs_out.c_str(), ios::out);
+    testing_labels.open(testing_labels_out.c_str(), ios::out);
+    testing_image.open(testing_image_fn.c_str(), ios::in | ios::binary); // Binary image file
+    testing_label.open(testing_label_fn.c_str(), ios::in | ios::binary ); // Binary label file
+
+    const int width = 28;
+    const int height = 28;
+    const int n3 = 10;
+
+    // Reading file headers
+    char number;
+    for (int i = 1; i <= 16; ++i) {
+        training_image.read(&number, sizeof(char));
+        testing_image.read(&number, sizeof(char));
+    }
+    for (int i = 1; i <= 8; ++i) {
+        training_label.read(&number, sizeof(char));
+        testing_label.read(&number, sizeof(char));
+    }
+
+    for (int sample = 1; sample <= nTraining; ++sample) {
+        // Reading training images
+        for (int j = 1; j <= height; ++j) {
+            for (int i = 1; i <= width; ++i) {
+                training_image.read(&number, sizeof(char));
+                int pos = i + (j - 1) * width;
+                training_inputs << ((number == 0)? 0: 1);
+                if( pos < height * width )
+                    training_inputs << ",";
             }
         }
-    }
-}
+        training_inputs << "\n";
 
-void readArguments(int argc, char *argv[], std::vector<uint>* hiddenLayers, bool* noGenData, int* dataSize){
-    if( argc > 1 ){
-        int i = 1;
-        while( i < argc ){
-            std::string argument = argv[i];
-            
-            if( !argument.compare("--layers") ){
-                int quantity = std::stoi(argv[i + 1]);
-                i += 2;
-               
-                int limit = i + quantity - 1;
-                for( i; i <= limit; i++ ){
-                    (*hiddenLayers).push_back(std::stoi(argv[i]));
-                }
-            }else if( !argument.compare("--noGenData") ){
-                (*noGenData) = true;
-                ++i;
-            }else if( !argument.compare("--dataSize") ){
-                (*dataSize) = std::stoi(argv[i+1]);
-                i += 2;
-            }else {
-                std::cout << "Unknown parameter: " << argv[i] << "\n";
-                exit(3);
-            }            
+        // Reading training labels
+        training_label.read(&number, sizeof(char));
+        for (int i = 1; i <= n3; ++i) {
+            training_labels << (( i == number + 1 )? 1: 0);
+            if( i < n3 )
+            training_labels << ",";
         }
+        training_labels << "\n";
     }
+
+    for (int sample = 1; sample <= 10000; ++sample) {
+        // Reading testing images
+        for (int j = 1; j <= height; ++j) {
+            for (int i = 1; i <= width; ++i) {
+                testing_image.read(&number, sizeof(char));
+                int pos = i + (j - 1) * width;
+                testing_inputs << ((number == 0)? 0: 1);
+                if( pos < height * width )
+                    testing_inputs << ",";
+            }
+        }
+        testing_inputs << "\n";
+
+        // Reading testing labels
+        testing_label.read(&number, sizeof(char));
+        for (int i = 1; i <= n3; ++i) {
+            testing_labels << (( i == number + 1 )? 1: 0);
+            if( i < n3 )
+            testing_labels << ",";
+        }
+        testing_labels << "\n";
+    }
+
+    training_image.close(); testing_image.close();
+    training_label.close(); testing_label.close();
+    training_inputs.close(); testing_inputs.close();
+    training_labels.close(); testing_labels.close();
 }
 
-typedef std::vector<RowVector*> data;
 int main(int argc, char *argv[])
 {
-    data in_dat, out_dat;
-    std::vector<uint> hiddenLayers;
-    bool noGenData = false;
-    int dataSize = 100000;
+    createCSVs();
     struct timeval tval_before, tval_after, tval_result;
- 
+
+    cout << "Setting up...\n"; 
+    report.open(report_fn.c_str(), ios::out);
+    bool **in_dat = (bool **) malloc( (nTraining+1) * sizeof(bool*) );
+    bool **out_dat = (bool **) malloc( (nTraining+1) * sizeof(bool*) );
+
+    int input_cols = ReadCSV("input/training_input.csv", in_dat);
+    int labels_cols =  ReadCSV("input/training_labels.csv", out_dat);
     
+    for(int i = 0; i < 3; i++){
+        report << "Training iteration: " << (i + 1) << endl;
+        gettimeofday(&tval_before, NULL);
+        NeuralNetwork net(input_cols, labels_cols);
 
-    readArguments(argc, argv, &hiddenLayers, &noGenData, &dataSize);
+        int sample = 0;
+        for( sample; sample < nTraining; sample++ ){
+            net.updateInput(in_dat[sample]);
+            net.updateExpectedOutput(out_dat[sample]);
 
-    if(!noGenData){
-        std::cout << "Generating data: " << dataSize << " rows!" << std::endl;
-        genData("./data/data", dataSize);
-    }
+            int nIterations = net.train();
+            /*if( (sample + 1) % 10000 == 0 ){
+                report << "Sample " << (sample + 1) << ": No. iterations = " << nIterations << ", Error = " << net.calculateErrors() << endl;
 
-    ReadCSV("./data/data-in", in_dat);
-    ReadCSV("./data/data-out", out_dat);
+                gettimeofday(&tval_after, NULL);
+                timersub(&tval_after, &tval_before, &tval_result);
+                report << "Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << "seconds.\n";
+            }
 
-    std::vector<uint> topology;
-    topology.push_back(in_dat[0]->size());
-
-    if( hiddenLayers.size() == 0 ){
-        topology.push_back(in_dat[0]->size());
-    } else {
-        for( int i = 0; i < hiddenLayers.size(); i++ ){
-            topology.push_back(hiddenLayers[i]);
+            // Save the current network (weights)
+            if ((sample + 1) % 1000 == 0) {
+                cout << "Saving the network on " << (sample + 1) << " samples." << endl;
+                net.write_matrix(model_fn);
+            }*/
         }
+
+        gettimeofday(&tval_after, NULL);
+        timersub(&tval_after, &tval_before, &tval_result);
+
+        // printf("Time elapsed training: %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec); 
+
+        net.write_matrix(model_fn + to_string(i) + ".dat");
+        report << "Sample " << sample << ", Error = " << net.calculateErrors() << endl;
+        report << "Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << "seconds.\n" << endl;
+        if( i < 2 );
+            std::this_thread::sleep_for(seconds(10));
     }
-
-    topology.push_back(out_dat[0]->size());
-
-    gettimeofday(&tval_before, NULL);
-
-    NeuralNetwork n(topology);
-    n.train(in_dat, out_dat);
-
-    gettimeofday(&tval_after, NULL);
-    timersub(&tval_after, &tval_before, &tval_result);
-
-    printf("Time elapsed training: %ld.%06ld\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec);  
+    report.close();
     return 0;
 }
