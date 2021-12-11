@@ -203,13 +203,13 @@ void NeuralNetwork::write_matrix(string file_name) {
 }
 
 void NeuralNetwork::updateInput(bool* referenceInput){
-    for(int position = 0; position < n1; position++){
-        this->out1[position] = (double) referenceInput[position];
-    }    
+    for(int position = 1; position <= n1; position++){
+        out1[position] = (double) referenceInput[position-1];
+    }
 }
 
 void NeuralNetwork::updateExpectedOutput(bool* referenceOutput){
-    for(int position = 0; position < n3; position++){
-        this->expected[position] = (double) referenceOutput[position];
+    for(int position = 1; position <= n3; position++){
+        expected[position] = (double) referenceOutput[position-1];
     }
 }

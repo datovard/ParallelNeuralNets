@@ -43,10 +43,14 @@ public:
     // function to train the neural network give an array of data points
     int train();
 
-    void write_matrix(string file_name);
+    void writeMatrix(string file_name);
+
+    void loadModel(string file_name);
 
     void updateInput(bool* referenceInput);
     
     void updateExpectedOutput(bool* referenceOutput);
+
+    double* getOutput();
 };
 

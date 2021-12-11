@@ -9,11 +9,6 @@
 
 using namespace std;
 
-double activationFunction(double x)
-{
-    return 1.0 / (1.0 + exp(-x));
-}
-
 // constructor of neural network class
 NeuralNetwork::NeuralNetwork(int input_size, int label_size, int num_threads)
 {
@@ -59,7 +54,7 @@ NeuralNetwork::NeuralNetwork(int input_size, int label_size, int num_threads)
     #pragma omp parallel for collapse(2)
     for (int i = 1; i <= n1; ++i) {
         for (int j = 1; j <= n2; ++j) {
-            int sign = (rand() % 2)? -1: 1;
+            int sign = (rand() % 2 == 1)? -1: 1;
             w1[i][j] = (sign) * (double)(rand() % 6) / 10.0;
         }
 	}
@@ -68,15 +63,20 @@ NeuralNetwork::NeuralNetwork(int input_size, int label_size, int num_threads)
     #pragma omp parallel for collapse(2)
     for (int i = 1; i <= n2; ++i) {
         for (int j = 1; j <= n3; ++j) {
-            int sign = (rand() % 2)? -1: 1;
+            int sign = (rand() % 2  == 1)? -1: 1;
             w2[i][j] = (sign) * (double)(rand() % 10 + 1) / (10.0 * n3);
         }
 	}
 };
 
+double activationFunction(double x)
+{
+    return 1.0 / (1.0 + exp(-x));
+}
 
 void NeuralNetwork::propagateForward()
 {
+    #pragma omp parallel for
     for (int i = 1; i <= n2; ++i) {
         in2[i] = 0.0;
     }
@@ -92,11 +92,12 @@ void NeuralNetwork::propagateForward()
 		}
 	}
 
+    #pragma omp parallel for
     for (int i = 1; i <= n2; ++i) {
 		out2[i] = activationFunction(in2[i]);
 	}
 
-    // #pragma omp parallel for collapse(2)
+    #pragma omp parallel for collapse(2)
     for (int i = 1; i <= n2; ++i) {
         for (int j = 1; j <= n3; ++j) {
             in3[j] += out2[i] * w2[i][j];
@@ -108,13 +109,24 @@ void NeuralNetwork::propagateForward()
 	}
 }
 
+double NeuralNetwork::calculateErrors()
+{
+    double res = 0.0;
+    for (int i = 1; i <= n3; ++i) {
+        res += (out3[i] - expected[i]) * (out3[i] - expected[i]);
+	}
+    res *= 0.5;
+    return res;
+}
+
 void NeuralNetwork::propagateBackward()
 {
+    double sum;
+
     for (int i = 1; i <= n3; ++i) {
         theta3[i] = out3[i] * (1 - out3[i]) * (expected[i] - out3[i]);
 	}
 
-    double sum;
     #pragma omp parallel for
     for (int i = 1; i <= n2; ++i) {
         sum = 0.0;
@@ -125,7 +137,7 @@ void NeuralNetwork::propagateBackward()
         theta2[i] = out2[i] * (1 - out2[i]) * sum;
     }
 
-    // #pragma omp parallel for
+    #pragma omp parallel for
     for (int i = 1; i <= n2; ++i) {
         for (int j = 1; j <= n3; ++j) {
             delta2[i][j] = (learning_rate * theta3[j] * out2[i]) + (momentum * delta2[i][j]);
@@ -140,16 +152,6 @@ void NeuralNetwork::propagateBackward()
             w1[i][j] += delta1[i][j];
         }
 	}
-}
-
-double NeuralNetwork::calculateErrors()
-{
-    double res = 0.0;
-    for (int i = 1; i <= n3; ++i) {
-        res += (out3[i] - expected[i]) * (out3[i] - expected[i]);
-	}
-    res *= 0.5;
-    return res;
 }
 
 int NeuralNetwork::train()
@@ -178,25 +180,21 @@ int NeuralNetwork::train()
     return epochs;
 }
 
-// +------------------------+
-// | Saving weights to file |
-// +------------------------+
-
-void NeuralNetwork::write_matrix(string file_name) {
+void NeuralNetwork::writeMatrix(string file_name) {
     ofstream file(file_name.c_str(), ios::out);
 	
 	// Input layer - Hidden layer
-    for (int i = 1; i <= this->n1; ++i) {
-        for (int j = 1; j <= this->n2; ++j) {
-			file << this->w1[i][j] << " ";
+    for (int i = 1; i <= n1; ++i) {
+        for (int j = 1; j <= n2; ++j) {
+			file << w1[i][j] << " ";
 		}
 		file << endl;
     }
 	
 	// Hidden layer - Output layer
-    for (int i = 1; i <= this->n2; ++i) {
-        for (int j = 1; j <= this->n3; ++j) {
-			file << this->w2[i][j] << " ";
+    for (int i = 1; i <= n2; ++i) {
+        for (int j = 1; j <= n3; ++j) {
+			file << w2[i][j] << " ";
 		}
         file << endl;
     }
@@ -204,14 +202,38 @@ void NeuralNetwork::write_matrix(string file_name) {
 	file.close();
 }
 
+void NeuralNetwork::loadModel(string file_name) {
+	ifstream file(file_name.c_str(), ios::in);
+	
+	// Input layer - Hidden layer
+    for (int i = 1; i <= n1; ++i) {
+        for (int j = 1; j <= n2; ++j) {
+			file >> w1[i][j];
+		}
+    }
+	
+	// Hidden layer - Output layer
+    for (int i = 1; i <= n2; ++i) {
+        for (int j = 1; j <= n3; ++j) {
+			file >> w2[i][j];
+		}
+    }
+	
+	file.close();
+}
+
 void NeuralNetwork::updateInput(bool* referenceInput){
-    for(int position = 0; position < n1; position++){
-        this->out1[position] = (double) referenceInput[position];
-    }    
+    for(int position = 1; position <= n1; position++){
+        out1[position] = (double) referenceInput[position-1];
+    }
 }
 
 void NeuralNetwork::updateExpectedOutput(bool* referenceOutput){
-    for(int position = 0; position < n3; position++){
-        this->expected[position] = (double) referenceOutput[position];
+    for(int position = 1; position <= n3; position++){
+        expected[position] = (double) referenceOutput[position-1];
     }
+}
+
+double* NeuralNetwork::getOutput(){
+    return this->out3;
 }
