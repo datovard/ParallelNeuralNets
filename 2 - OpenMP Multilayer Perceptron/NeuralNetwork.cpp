@@ -130,7 +130,6 @@ void NeuralNetwork::propagateBackward()
     #pragma omp parallel for
     for (int i = 1; i <= n2; ++i) {
         sum = 0.0;
-        #pragma omp parallel for reduction(+: sum)
         for (int j = 1; j <= n3; ++j) {
             sum += w2[i][j] * theta3[j];
 		}
@@ -145,7 +144,7 @@ void NeuralNetwork::propagateBackward()
         }
 	}
 
-    #pragma omp parallel for collapse(2)
+    #pragma omp parallel for
     for (int i = 1; i <= n1; ++i) {
         for (int j = 1 ; j <= n2 ; j++ ) {
             delta1[i][j] = (learning_rate * theta2[j] * out1[i]) + (momentum * delta1[i][j]);

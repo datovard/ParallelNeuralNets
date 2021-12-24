@@ -13,10 +13,10 @@
 using namespace std;
 
 // Weights file name
-const string model_fn = "output/model-neural-network-12-1.dat";
+const string model_fn = "output/model-neural-network";
 
 // Report file name
-const string report_fn = "output/training-report-12-1.dat";
+const string report_fn = "output/training-report.dat";
 
 // Number of training samples
 int nTraining = 60000;
@@ -37,12 +37,12 @@ int main(int argc, char *argv[])
     int input_cols = ReadCSV("input/training_input.csv", in_dat, nTraining);
     int labels_cols =  ReadCSV("input/training_labels.csv", out_dat, nTraining);
     
-    int num_threads [] = {12}; 
+    int num_threads [] = {1,2,4,8,12,24}; 
 
     cout << "Training...\n";
-    for(int i = 0; i < 1; i++){
+    for(int i = 0; i < 6; i++){
         report << "Number of threads: " << num_threads[i] << "\n";
-        for(int j = 0; j < 1; j++){
+        for(int j = 0; j < 5; j++){
             gettimeofday(&tval_before, NULL);
             
             NeuralNetwork net(input_cols, labels_cols, num_threads[i]);
@@ -58,7 +58,7 @@ int main(int argc, char *argv[])
             gettimeofday(&tval_after, NULL);
             timersub(&tval_after, &tval_before, &tval_result);
 
-            net.writeMatrix(model_fn);
+            net.writeMatrix(model_fn + "-" + to_string(num_threads[i]) + "-" + to_string(j+1) + ".dat");
             report << "Sample " << sample << ", Error = " << net.calculateErrors();
             report << ", Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << " seconds" << endl ;
         }
