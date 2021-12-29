@@ -37,12 +37,12 @@ int main(int argc, char *argv[])
     int input_cols = ReadCSV("input/training_input.csv", in_dat, nTraining);
     int labels_cols =  ReadCSV("input/training_labels.csv", out_dat, nTraining);
     
-    int num_threads [] = {1,2,4,8,12,24}; 
+    int num_threads [] = {2,4,8,12,24}; 
 
     cout << "Training...\n";
-    for(int i = 0; i < 6; i++){
+    for(int i = 0; i < 5; i++){
         report << "Number of threads: " << num_threads[i] << "\n";
-        for(int j = 0; j < 5; j++){
+        for(int j = 0; j < 1; j++){
             gettimeofday(&tval_before, NULL);
             
             NeuralNetwork net(input_cols, labels_cols, num_threads[i]);
