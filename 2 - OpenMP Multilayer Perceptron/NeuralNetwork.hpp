@@ -19,10 +19,10 @@ public:
     const double epsilon = 1e-3;
 
     // From layer 1 to layer 2. Or: Input layer - Hidden layer
-    double **w1, **delta1, *out1;
+    double *w1, *delta1, *out1;
 
     // From layer 2 to layer 3. Or; Hidden layer - Output layer
-    double **w2, **delta2, *in2, *out2, *theta2;
+    double *w2, *delta2, *in2, *out2, *theta2;
 
     // Layer 3 - Output layer
     double *in3, *out3, *theta3;

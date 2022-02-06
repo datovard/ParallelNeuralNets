@@ -168,43 +168,45 @@ int main(int argc, char *argv[])
     int input_cols = ReadCSV("input/training_input.csv", in_dat);
     int labels_cols =  ReadCSV("input/training_labels.csv", out_dat);
     
-    for(int i = 0; i < 3; i++){
-        report << "Training iteration: " << (i + 1) << endl;
-        gettimeofday(&tval_before, NULL);
-        NeuralNetwork net(input_cols, labels_cols);
+    
+    gettimeofday(&tval_before, NULL);
+    NeuralNetwork net(input_cols, labels_cols);
 
-        int sample = 0;
-        for( sample; sample < nTraining; sample++ ){
-            net.updateInput(in_dat[sample]);
-            net.updateExpectedOutput(out_dat[sample]);
+    int sample = 0, counter = 0;
+    for( sample; sample < nTraining; sample++ ){
+        net.updateInput(in_dat[sample]);
+        net.updateExpectedOutput(out_dat[sample]);
 
-            int nIterations = net.train();
-            /*if( (sample + 1) % 10000 == 0 ){
-                report << "Sample " << (sample + 1) << ": No. iterations = " << nIterations << ", Error = " << net.calculateErrors() << endl;
+        int nIterations = net.train();
+        /*if( (sample + 1) % 10000 == 0 ){
+            report << "Sample " << (sample + 1) << ": No. iterations = " << nIterations << ", Error = " << net.calculateErrors() << endl;
 
-                gettimeofday(&tval_after, NULL);
-                timersub(&tval_after, &tval_before, &tval_result);
-                report << "Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << "seconds.\n";
-            }
+            gettimeofday(&tval_after, NULL);
+            timersub(&tval_after, &tval_before, &tval_result);
+            report << "Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << "seconds.\n";
+        }*/
 
-            // Save the current network (weights)
-            if ((sample + 1) % 1000 == 0) {
-                cout << "Saving the network on " << (sample + 1) << " samples." << endl;
-                net.write_matrix(model_fn);
-            }*/
+        if(nIterations == net.epochs) counter++;
+        if(sample % 500 == 0){
+            //report << sample << "," << nIterations << "," << net.calculateErrors() << "," << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << endl;
+            cout << sample << ": " << nIterations << ": " << counter << endl;
         }
-
-        gettimeofday(&tval_after, NULL);
-        timersub(&tval_after, &tval_before, &tval_result);
-
-        // printf("Time elapsed training: %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec); 
-
-        net.write_matrix(model_fn + to_string(i) + ".dat");
-        report << "Sample " << sample << ", Error = " << net.calculateErrors() << endl;
-        report << "Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << "seconds.\n" << endl;
-        if( i < 2 );
-            std::this_thread::sleep_for(seconds(10));
+        // Save the current network (weights)
+        if ((sample + 1) % 1000 == 0) {
+            cout << "Saving the network on " << (sample + 1) << " samples." << endl;
+            net.write_matrix(model_fn);
+        }
     }
+
+    gettimeofday(&tval_after, NULL);
+    timersub(&tval_after, &tval_before, &tval_result);
+
+    printf("Time elapsed training: %ld.%06ld seconds\n", (long int)tval_result.tv_sec, (long int)tval_result.tv_usec); 
+
+    net.write_matrix(model_fn + ".dat");
+    report << "Sample " << sample << ", Error = " << net.calculateErrors() << endl;
+    report << "Time elapsed training: " << ((long int)tval_result.tv_sec) << "." << ((long int)tval_result.tv_usec) << "seconds.\n" << endl;
+    
     report.close();
     return 0;
 }
