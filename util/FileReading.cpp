@@ -122,3 +122,40 @@ int ReadCSV(std::string filename, bool** in_dat, int nTraining)
     }
     return cols;
 }
+
+int ReadCSVOnDouble(std::string filename, double** in_dat, int nTraining)
+{
+    std::ifstream file(filename);
+    std::string line, word;
+
+    // determine number of columns in file
+    getline(file, line, '\n');
+    std::stringstream ss(line);
+    std::vector<double> parsed_vec;
+
+    while (getline(ss, word, ',')) {
+        parsed_vec.push_back( (double) (std::stoi(&word[0]))) ;
+    }
+    uint cols = parsed_vec.size();
+    in_dat[0] = new double[cols];
+    for(int i = 0; i < cols; i++){
+        in_dat[0][i] = parsed_vec[i];
+    }
+ 
+    // read the file
+    int i = 1;
+    if (file.is_open()) {
+        while (getline(file, line, '\n') && i < nTraining) {
+            std::stringstream ss(line);
+
+            in_dat[i] = new double[cols];
+            uint j = 0;
+            while (getline(ss, word, ',')) {
+                in_dat[i][j] = (double) std::stoi(&word[0]);
+                j++;
+            }
+            i++;
+        }
+    }
+    return cols;
+}

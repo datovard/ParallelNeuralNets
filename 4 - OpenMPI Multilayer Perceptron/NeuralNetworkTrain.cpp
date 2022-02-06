@@ -9,6 +9,7 @@
 #include <set>
 #include <iterator>
 #include <algorithm>
+#include "../util/FileReading.cpp"
 
 using namespace std;
 
@@ -43,6 +44,7 @@ const int n1 = width * height; // = 784, without bias neuron
 const int n2 = 128; 
 const int n3 = 10; // Ten classes: 0 - 9
 const int iterations = 512;
+const int batch_size = 32;
 const double learning_rate = 1e-3;
 const double momentum = 0.9;
 const double epsilon = 1e-3;
@@ -64,30 +66,6 @@ int d[width + 1][height + 1];
 ifstream image;
 ifstream label;
 ofstream report;
-
-// +--------------------+
-// | About the software |
-// +--------------------+
-
-void about() {
-	// Details
-	cout << "**************************************************" << endl;
-	cout << "*** Training Neural Network for MNIST database ***" << endl;
-	cout << "**************************************************" << endl;
-	cout << endl;
-	cout << "No. input neurons: " << n1 << endl;
-	cout << "No. hidden neurons: " << n2 << endl;
-	cout << "No. output neurons: " << n3 << endl;
-	cout << endl;
-	cout << "No. iterations: " << iterations << endl;
-	cout << "Learning rate: " << learning_rate << endl;
-	cout << "Momentum: " << momentum << endl;
-	cout << "Epsilon: " << epsilon << endl;
-	cout << endl;
-	cout << "Training image data: " << training_image_fn << endl;
-	cout << "Training label data: " << training_label_fn << endl;
-	cout << "No. training sample: " << nTraining << endl << endl;
-}
 
 // +-----------------------------------+
 // | Memory allocation for the network |
@@ -114,13 +92,13 @@ void init_array() {
   expected = new double [n3];
 
    // Initialization for weights from Input layer to Hidden layer
-  #pragma omp parallel for
+  //#pragma omp parallel for
   for (int i = 0; i < n1 * n2; i++) {
     w1[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 6) / 10.0;
 	}
 	
 	// Initialization for weights from Hidden layer to Output layer
-  #pragma omp parallel for
+  //#pragma omp parallel for
   for (int i = 0; i < n2 * n3; i++) {
     w2[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 10 + 1) / (10.0 * n3);
 	}
@@ -227,7 +205,7 @@ void back_propagation() {
 // +-------------------------------------------------+
 
 int learning_process() {
-  // #pragma omp parallel for
+  //#pragma omp parallel for
   for (int pos = 0; pos < n1 * n2; pos++) {
 		delta1[pos] = 0.0;
 	}
@@ -251,22 +229,16 @@ int learning_process() {
 // | Reading input - gray scale image and the corresponding label |
 // +--------------------------------------------------------------+
 
-void input() {
+void input(const double* image, const double* label) {
   // Reading image
-  char number;
-  for (int j = 1; j <= height; ++j) {
-    for (int i = 1; i <= width; ++i) {
-      image.read(&number, sizeof(char));
-      out1[i + (j - 1) * width] = (number == 0)? 0: 1;
-    }
+  for(int i = 0; i < height * width; i++){
+    out1[i] = image[i];
   }
 
   // Reading label
-  label.read(&number, sizeof(char));
-  for (int i = 1; i <= n3; ++i) {
-    expected[i] = 0.0;
+  for (int i = 0; i < n3; i++) {
+    expected[i] = label[i];
   }
-  expected[number + 1] = 1.0;
 }
 
 // +------------------------+
@@ -300,38 +272,33 @@ void write_matrix(string file_name) {
 // +--------------+
 
 int main(int argc, char *argv[]) {
-  about();
+  createTrainTestCSVs(60000, 10000, "4 - OpenMPI Multilayer Perceptron");
+  struct timeval tval_before, tval_after, tval_result;
 
+  cout << "Setting up...\n"; 
   report.open(report_fn.c_str(), ios::out);
-  image.open(training_image_fn.c_str(), ios::in | ios::binary); // Binary image file
-  label.open(training_label_fn.c_str(), ios::in | ios::binary ); // Binary label file
+  double **in_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
+  double **out_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
 
-  // Reading file headers
-  char number;
-  for (int i = 1; i <= 16; ++i) {
-    image.read(&number, sizeof(char));
-  }
-  for (int i = 1; i <= 8; ++i) {
-    label.read(&number, sizeof(char));
-  }
+  int input_cols = ReadCSVOnDouble("input/training_input.csv", in_dat, nTraining);
+  int labels_cols =  ReadCSVOnDouble("input/training_labels.csv", out_dat, nTraining);
 
   // Neural Network Initialization
   init_array();
 
-  for (int sample = 1; sample <= nTraining; ++sample) {
+  int batch_amount = (int) nTraining / batch_size;
+  
+  for(int sample = 0; sample < nTraining; sample++){      
     // Getting (image, label)
-    input();
+    input(in_dat[sample], out_dat[sample]);
 
     // Learning process: Perceptron (Forward procedure) - Back propagation
     int nIterations = learning_process();
 
     // Write down the squared error
     if(sample % 500 == 0){
-      cout << "No. iterations: " << nIterations << endl;
-      printf("Error: %0.6lf\n\n", square_error());
       report << "Sample " << sample << ": No. iterations = " << nIterations << ", Error = " << square_error() << endl;
 
-      cout << "Saving the network to " << model_fn << " file." << endl;
       write_matrix(model_fn);
     }
   }
