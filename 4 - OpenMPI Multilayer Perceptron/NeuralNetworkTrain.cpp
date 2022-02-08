@@ -58,12 +58,12 @@ const double epsilon = 1e-3;
 
 // From layer 1 to layer 2. Or: Input layer - Hidden layer
 double *w1, *delta1, *out1;
-double *original_w1, *cumulative_delta1;
+double *original_w1;
 double *final_w1;
 
 // From layer 2 to layer 3. Or; Hidden layer - Output layer
 double *w2, *delta2, *in2, *out2, *theta2;
-double *original_w2, *cumulative_delta2;
+double *original_w2;
 double *final_w2;
 
 // Layer 3 - Output layer
@@ -76,6 +76,9 @@ int d[width + 1][height + 1];
 // File stream to read data (image, label) and write down a report
 ofstream report_train;
 ofstream report_test;
+
+double **in_dat, **out_dat;
+double **in_test, **out_test;
 
 // +-----------------------------------+
 // | Memory allocation for the network |
@@ -98,15 +101,26 @@ void clean_array(double * array, int size) {
 void add_cumulative_array(const double * original, double * cumulative, int size) {
   #pragma omp parallel for
   for (int i = 0; i < size; i++) {
-    cumulative[i] = original[i];
+    cumulative[i] += original[i];
 	}
 }
 
-void add_deltas_to_weights(const double * deltas, double * weights, int size, int batch) {
+void get_weights_difference(double * original, double * weights, double * finals, int size, int model_amount){
   #pragma omp parallel for
-  for (int i = 0; i < size; i++) {
-    weights[i] += deltas[i]/batch;
+  for(int i = 0; i < size; i++){
+    double change = (original[i] - weights[i] <= 0)? (weights[i] - original[i]): -1*(original[i] - weights[i]);
+    finals[i] += change / model_amount;
   }
+}
+
+bool arrays_are_equal(double * arr1, double * arr2, int size){
+  for( int i = 0; i < size; i++ ){
+    if(abs(final_w2[i] - w2[i]) > 0.00001){ 
+      return false; 
+    }
+  }
+
+  return true;
 }
 
 void init_array() {
@@ -115,7 +129,6 @@ void init_array() {
   original_w1 = new double[n1*n2];
   final_w1 = new double[n1*n2];
   delta1 = new double[n1*n2];
-  cumulative_delta1 = new double[n1*n2];
   out1 = new double[n1];
 
   // Layer 2 - Layer 3 = Hidden layer - Output layer
@@ -123,7 +136,6 @@ void init_array() {
   original_w2 = new double[n2*n3];
   final_w2 = new double[n2*n3];
   delta2 = new double[n2 * n3];
-  cumulative_delta2 = new double[n1*n2];
   in2 = new double [n2];
   out2 = new double [n2];
   theta2 = new double [n2];
@@ -145,10 +157,7 @@ void init_array() {
   #pragma omp parallel for
   for (int i = 0; i < n2 * n3; i++) {
     original_w2[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 10 + 1) / (10.0 * n3);
-	}
-
-  clean_array(cumulative_delta1, n1 * n2);
-  clean_array(cumulative_delta2, n2 * n3);
+  }
 }
 
 // +------------------+
@@ -212,7 +221,7 @@ void final_perceptron() {
 		out2[pos] = sigmoid(in2[pos]);
 	}
 
-  matrix_vector_multiplication(final_w1, out2, in3, n2, n3);
+  matrix_vector_multiplication(final_w2, out2, in3, n2, n3);
     
   #pragma omp parallel for
   for (int i = 0; i < n3; i++) {
@@ -276,9 +285,6 @@ int learning_process() {
     }
   }
 
-  add_cumulative_array(delta1, cumulative_delta1, n1 * n2);
-  add_cumulative_array(delta2, cumulative_delta2, n2 * n3);
-
   return i;
 }
 
@@ -324,6 +330,21 @@ void write_matrix(string file_name) {
   file.close();
 }
 
+void read_dataset(){
+  cout << "Setting up...\n"; 
+  report_train.open(report_train_fn.c_str(), ios::out);
+  report_test.open(report_test_fn.c_str(), ios::out);
+  in_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
+  out_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
+  in_test = (double **) malloc( (nTesting+1) * sizeof(double*) );
+  out_test = (double **) malloc( (nTesting+1) * sizeof(double*) );
+
+  ReadCSVOnDouble("input/training_input.csv", in_dat, nTraining);
+  ReadCSVOnDouble("input/training_labels.csv", out_dat, nTraining);
+  ReadCSVOnDouble("input/testing_input.csv", in_test, nTesting);
+  ReadCSVOnDouble("input/testing_labels.csv", out_test, nTesting);
+}
+
 // +--------------+
 // | Main Program |
 // +--------------+
@@ -333,46 +354,36 @@ int main(int argc, char *argv[]) {
   createTrainTestCSVs(60000, 10000, "4 - OpenMPI Multilayer Perceptron");
   struct timeval tval_before, tval_after, tval_result;
 
-  cout << "Setting up...\n"; 
-  report_train.open(report_train_fn.c_str(), ios::out);
-  report_test.open(report_test_fn.c_str(), ios::out);
-  double **in_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
-  double **out_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
-  double **in_test = (double **) malloc( (nTesting+1) * sizeof(double*) );
-  double **out_test = (double **) malloc( (nTesting+1) * sizeof(double*) );
-
-  int input_cols = ReadCSVOnDouble("input/training_input.csv", in_dat, nTraining);
-  int labels_cols =  ReadCSVOnDouble("input/training_labels.csv", out_dat, nTraining);
-  int input_cols_test = ReadCSVOnDouble("input/testing_input.csv", in_test, nTesting);
-  int labels_cols_test =  ReadCSVOnDouble("input/testing_labels.csv", out_test, nTesting);
+  read_dataset();
 
   // Neural Network Initialization
   init_array();
 
   int batch_size = 100;
-  int batch_amount = 1;
+  int model_amount = 3;
+  int epochs = 1;
 
   copy_array(original_w1, final_w1, n1 * n2);
   copy_array(original_w2, final_w2, n2 * n3);
   
-  for(int batch = 0; batch < batch_amount; batch++){
+  for(int model = 0; model < model_amount; model++){
     copy_array(original_w1, w1, n1 * n2);
     copy_array(original_w2, w2, n2 * n3);
 
-    for(int sample = 0; sample < batch_size; sample++){      
-      // Getting (image, label)
-      input(in_dat[sample + (batch * batch_size)], out_dat[sample + (batch * batch_size)]);
+    for(int epoch = 1; epoch <= epochs; epoch++){
+      for(int sample = 0; sample < batch_size; sample++){      
+        // Getting (image, label)
+        input(in_dat[sample + (model * batch_size)], out_dat[sample + (model * batch_size)]);
 
-      // Learning process: Perceptron (Forward procedure) - Back propagation
-      int nIterations = learning_process();
+        // Learning process: Perceptron (Forward procedure) - Back propagation
+        int nIterations = learning_process();
 
-      // Write down the squared error
-      if(sample % 500 == 0){
-        report_train << "Sample " << sample << ": No. iterations = " << nIterations << ", Error = " << square_error() << endl;
+        // Write down the squared error
+        if(sample % 500 == 0){
+          report_train << "Sample " << sample << ": No. iterations = " << nIterations << ", Error = " << square_error() << endl;
+        }
       }
     }
-    
-    write_matrix(model_fn);
 
     int nCorrect = 0, label = 0;;
     for (int sample = 0; sample < nTesting; sample++) {
@@ -410,10 +421,10 @@ int main(int argc, char *argv[]) {
     
     report_test << "Number of correct samples: " << nCorrect << " / " << nTesting << endl;
     report_test << "Accuracy: " << accuracy << endl;
-  }
 
-  add_deltas_to_weights(cumulative_delta1, final_w1, n1 * n2, batch_amount);
-  add_deltas_to_weights(cumulative_delta2, final_w2, n2 * n3, batch_amount);
+    get_weights_difference( original_w1, w1, final_w1, n1 * n2, model_amount);
+    get_weights_difference( original_w2, w2, final_w2, n2 * n3, model_amount);
+  }
 
   int nCorrect = 0, label = 0;;
   for (int sample = 0; sample < nTesting; sample++) {
@@ -456,4 +467,3 @@ int main(int argc, char *argv[]) {
   report_test.close();
   return 0;
 }
-
