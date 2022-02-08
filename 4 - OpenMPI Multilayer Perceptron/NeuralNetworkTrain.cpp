@@ -9,6 +9,7 @@
 #include <set>
 #include <iterator>
 #include <algorithm>
+#include <omp.h>
 #include "../util/FileReading.cpp"
 
 using namespace std;
@@ -23,10 +24,16 @@ const string training_label_fn = "input/train-labels.idx1-ubyte";
 const string model_fn = "output/model-neural-network.dat";
 
 // Report file name
-const string report_fn = "output/training-report.dat";
+const string report_train_fn = "output/training-report.dat";
+
+// Report file name
+const string report_test_fn = "output/testing-report.dat";
 
 // Number of training samples
 const int nTraining = 60000;
+
+// Number of testing samples
+const int nTesting = 10000;
 
 // Image size in MNIST database
 const int width = 28;
@@ -51,9 +58,13 @@ const double epsilon = 1e-3;
 
 // From layer 1 to layer 2. Or: Input layer - Hidden layer
 double *w1, *delta1, *out1;
+double *original_w1, *cumulative_delta1;
+double *final_w1;
 
 // From layer 2 to layer 3. Or; Hidden layer - Output layer
 double *w2, *delta2, *in2, *out2, *theta2;
+double *original_w2, *cumulative_delta2;
+double *final_w2;
 
 // Layer 3 - Output layer
 double *in3, *out3, *theta3;
@@ -63,23 +74,56 @@ double *expected;
 int d[width + 1][height + 1];
 
 // File stream to read data (image, label) and write down a report
-ifstream image;
-ifstream label;
-ofstream report;
+ofstream report_train;
+ofstream report_test;
 
 // +-----------------------------------+
 // | Memory allocation for the network |
 // +-----------------------------------+
 
+void copy_array(const double * original, double * copy, int size) {
+  #pragma omp parallel for
+  for (int i = 0; i < size; i++) {
+    copy[i] = original[i];
+	}
+}
+
+void clean_array(double * array, int size) {
+  #pragma omp parallel for
+  for (int i = 0; i < size; i++) {
+    array[i] = 0;
+	}
+}
+
+void add_cumulative_array(const double * original, double * cumulative, int size) {
+  #pragma omp parallel for
+  for (int i = 0; i < size; i++) {
+    cumulative[i] = original[i];
+	}
+}
+
+void add_deltas_to_weights(const double * deltas, double * weights, int size, int batch) {
+  #pragma omp parallel for
+  for (int i = 0; i < size; i++) {
+    weights[i] += deltas[i]/batch;
+  }
+}
+
 void init_array() {
   // Layer 1 - Layer 2 = Input layer - Hidden layer
   w1 = new double[n1*n2];
+  original_w1 = new double[n1*n2];
+  final_w1 = new double[n1*n2];
   delta1 = new double[n1*n2];
+  cumulative_delta1 = new double[n1*n2];
   out1 = new double[n1];
 
   // Layer 2 - Layer 3 = Hidden layer - Output layer
   w2 = new double[n2*n3];
+  original_w2 = new double[n2*n3];
+  final_w2 = new double[n2*n3];
   delta2 = new double[n2 * n3];
+  cumulative_delta2 = new double[n1*n2];
   in2 = new double [n2];
   out2 = new double [n2];
   theta2 = new double [n2];
@@ -92,16 +136,19 @@ void init_array() {
   expected = new double [n3];
 
    // Initialization for weights from Input layer to Hidden layer
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int i = 0; i < n1 * n2; i++) {
-    w1[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 6) / 10.0;
+    original_w1[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 6) / 10.0;
 	}
 	
 	// Initialization for weights from Hidden layer to Output layer
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int i = 0; i < n2 * n3; i++) {
-    w2[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 10 + 1) / (10.0 * n3);
+    original_w2[i] = ((rand() % 2 == 1)? -1: 1) * (double)(rand() % 10 + 1) / (10.0 * n3);
 	}
+
+  clean_array(cumulative_delta1, n1 * n2);
+  clean_array(cumulative_delta2, n2 * n3);
 }
 
 // +------------------+
@@ -113,7 +160,7 @@ double sigmoid(double x) {
 }
 
 void matrix_vector_multiplication(const double* weights, const double* outputs, double* inputs, const int height, const int width){
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int j = 0; j < width; j++) {
     for (int i = 0; i < height; i++) {
       inputs[j] += outputs[i] * weights[i * width + j];
@@ -122,7 +169,7 @@ void matrix_vector_multiplication(const double* weights, const double* outputs, 
 }
 
 void adjust_weights(const double* thetas, const double* outputs, double* deltas, double* weights, const int height, const int width, const double learning_rate, const double momentum){
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int i = 0; i < height; i++) {
     for (int j = 0; j < width; j++) {
       deltas[i * width + j] = (learning_rate * thetas[j] * outputs[i]) + (momentum * deltas[i * width + j]);
@@ -136,26 +183,38 @@ void adjust_weights(const double* thetas, const double* outputs, double* deltas,
 // +------------------------------+
 
 void perceptron() {
-  //#pragma omp parallel for
-  for (int pos = 0; pos < n2; pos++) {
-		in2[pos] = 0.0;
-	}
-
-  //#pragma omp parallel for
-  for (int pos = 0; pos < n3; pos++) {
-		in3[pos] = 0.0;
-	}
+  clean_array(in2, n2);
+  clean_array(in3, n3);
 
   matrix_vector_multiplication(w1, out1, in2, n1, n2);
 
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int pos = 0; pos < n2; pos++) {
 		out2[pos] = sigmoid(in2[pos]);
 	}
 
   matrix_vector_multiplication(w2, out2, in3, n2, n3);
     
-  //#pragma omp parallel for
+  #pragma omp parallel for
+  for (int i = 0; i < n3; i++) {
+		out3[i] = sigmoid(in3[i]);
+	}
+}
+
+void final_perceptron() {
+  clean_array(in2, n2);
+  clean_array(in3, n3);
+
+  matrix_vector_multiplication(final_w1, out1, in2, n1, n2);
+
+  #pragma omp parallel for
+  for (int pos = 0; pos < n2; pos++) {
+		out2[pos] = sigmoid(in2[pos]);
+	}
+
+  matrix_vector_multiplication(final_w1, out2, in3, n2, n3);
+    
+  #pragma omp parallel for
   for (int i = 0; i < n3; i++) {
 		out3[i] = sigmoid(in3[i]);
 	}
@@ -181,12 +240,12 @@ double square_error(){
 void back_propagation() {
   double sum;
 
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int pos = 0; pos < n3; pos++) {
     theta3[pos] = out3[pos] * (1 - out3[pos]) * (expected[pos] - out3[pos]);
 	}
     
-  //#pragma omp parallel for
+  #pragma omp parallel for
   for (int i = 0; i < n2; i++) {
     sum = 0.0;
     for (int j = 0; j < n3; j++) {
@@ -205,24 +264,22 @@ void back_propagation() {
 // +-------------------------------------------------+
 
 int learning_process() {
-  //#pragma omp parallel for
-  for (int pos = 0; pos < n1 * n2; pos++) {
-		delta1[pos] = 0.0;
-	}
+  clean_array(delta1, n1 * n2);
+  clean_array(delta2, n2 * n3);
 
-  //#pragma omp parallel for
-  for (int pos = 0; pos < n2 * n3; pos++) {
-		delta2[pos] = 0.0;
-	}
-
-  for (int i = 1; i <= iterations; ++i) {
+  int i = 1;
+  for (i; i <= iterations; ++i) {
     perceptron();
     back_propagation();
     if (square_error() < epsilon) {
-      return i;
+      break;
     }
   }
-  return iterations;
+
+  add_cumulative_array(delta1, cumulative_delta1, n1 * n2);
+  add_cumulative_array(delta2, cumulative_delta2, n2 * n3);
+
+  return i;
 }
 
 // +--------------------------------------------------------------+
@@ -272,43 +329,131 @@ void write_matrix(string file_name) {
 // +--------------+
 
 int main(int argc, char *argv[]) {
+  omp_set_num_threads(12);
   createTrainTestCSVs(60000, 10000, "4 - OpenMPI Multilayer Perceptron");
   struct timeval tval_before, tval_after, tval_result;
 
   cout << "Setting up...\n"; 
-  report.open(report_fn.c_str(), ios::out);
+  report_train.open(report_train_fn.c_str(), ios::out);
+  report_test.open(report_test_fn.c_str(), ios::out);
   double **in_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
   double **out_dat = (double **) malloc( (nTraining+1) * sizeof(double*) );
+  double **in_test = (double **) malloc( (nTesting+1) * sizeof(double*) );
+  double **out_test = (double **) malloc( (nTesting+1) * sizeof(double*) );
 
   int input_cols = ReadCSVOnDouble("input/training_input.csv", in_dat, nTraining);
   int labels_cols =  ReadCSVOnDouble("input/training_labels.csv", out_dat, nTraining);
+  int input_cols_test = ReadCSVOnDouble("input/testing_input.csv", in_test, nTesting);
+  int labels_cols_test =  ReadCSVOnDouble("input/testing_labels.csv", out_test, nTesting);
 
   // Neural Network Initialization
   init_array();
 
-  int batch_amount = (int) nTraining / batch_size;
+  int batch_size = 100;
+  int batch_amount = 1;
+
+  copy_array(original_w1, final_w1, n1 * n2);
+  copy_array(original_w2, final_w2, n2 * n3);
   
-  for(int sample = 0; sample < nTraining; sample++){      
+  for(int batch = 0; batch < batch_amount; batch++){
+    copy_array(original_w1, w1, n1 * n2);
+    copy_array(original_w2, w2, n2 * n3);
+
+    for(int sample = 0; sample < batch_size; sample++){      
+      // Getting (image, label)
+      input(in_dat[sample + (batch * batch_size)], out_dat[sample + (batch * batch_size)]);
+
+      // Learning process: Perceptron (Forward procedure) - Back propagation
+      int nIterations = learning_process();
+
+      // Write down the squared error
+      if(sample % 500 == 0){
+        report_train << "Sample " << sample << ": No. iterations = " << nIterations << ", Error = " << square_error() << endl;
+      }
+    }
+    
+    write_matrix(model_fn);
+
+    int nCorrect = 0, label = 0;;
+    for (int sample = 0; sample < nTesting; sample++) {
+      // Getting (image, label)
+      input(in_test[sample], out_test[sample]);
+
+      label = 0;
+      for( label; label < 9; label++){
+        if(out_test[sample][label]) break;
+      }
+    
+      // Classification - Perceptron procedure
+      perceptron();
+        
+      /// Prediction
+      int predict = 0;
+      for (int i = 1; i < n3; i++) {
+        if (out3[i] > out3[predict]) {
+          predict = i;
+        }
+      }
+
+      // Write down the classification result and the squared error
+      double error = square_error();
+    
+      if (label == predict) {
+        ++nCorrect;
+      }
+    }
+
+    // Summary
+    double accuracy = (double)(nCorrect) / nTesting * 100.0;
+    cout << "Number of correct samples: " << nCorrect << " / " << nTesting << endl;
+    printf("Accuracy: %0.2lf\n", accuracy);
+    
+    report_test << "Number of correct samples: " << nCorrect << " / " << nTesting << endl;
+    report_test << "Accuracy: " << accuracy << endl;
+  }
+
+  add_deltas_to_weights(cumulative_delta1, final_w1, n1 * n2, batch_amount);
+  add_deltas_to_weights(cumulative_delta2, final_w2, n2 * n3, batch_amount);
+
+  int nCorrect = 0, label = 0;;
+  for (int sample = 0; sample < nTesting; sample++) {
     // Getting (image, label)
-    input(in_dat[sample], out_dat[sample]);
+    input(in_test[sample], out_test[sample]);
 
-    // Learning process: Perceptron (Forward procedure) - Back propagation
-    int nIterations = learning_process();
+    label = 0;
+    for( label; label < 9; label++){
+      if(out_test[sample][label]) break;
+    }
+  
+    // Classification - Perceptron procedure
+    final_perceptron();
+      
+    /// Prediction
+    int predict = 0;
+    for (int i = 1; i < n3; i++) {
+      if (out3[i] > out3[predict]) {
+        predict = i;
+      }
+    }
 
-    // Write down the squared error
-    if(sample % 500 == 0){
-      report << "Sample " << sample << ": No. iterations = " << nIterations << ", Error = " << square_error() << endl;
-
-      write_matrix(model_fn);
+    // Write down the classification result and the squared error
+    double error = square_error();
+  
+    if (label == predict) {
+      ++nCorrect;
     }
   }
 
-  // Save the final network
-  write_matrix(model_fn);
+  // Summary
+  double accuracy = (double)(nCorrect) / nTesting * 100.0;
+  cout << "Number of correct samples: " << nCorrect << " / " << nTesting << endl;
+  printf("Accuracy: %0.2lf\n", accuracy);
+  
+  report_test << "Number of correct samples: " << nCorrect << " / " << nTesting << endl;
+  report_test << "Accuracy: " << accuracy << endl;
 
-  report.close();
-  image.close();
-  label.close();
-
+  report_train.close();
+  report_test.close();
   return 0;
 }
+
