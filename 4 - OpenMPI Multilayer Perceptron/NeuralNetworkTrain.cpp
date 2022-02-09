@@ -7,7 +7,7 @@
 #include <limits.h>
 #include <sys/time.h>
 #include <mpi.h>
-#include "FileReading.cpp"
+#include "../util/FileReading.cpp"
 
 #include <iostream>
 #include <fstream>
