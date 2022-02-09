@@ -7,7 +7,7 @@
 #include <limits.h>
 #include <sys/time.h>
 #include <mpi.h>
-#include "FileReading.cpp"
+#include "../util/FileReading.cpp"
 
 #include <iostream>
 #include <fstream>
@@ -39,13 +39,13 @@ const string report_train_fn = "output/training-report.dat";
 const string report_test_fn = "output/testing-report.dat";
 
 // Number of training samples
-const int nTraining = 60000;
+const int nTraining = 150;
 
 // Number of testing samples
 const int nTesting = 10000;
 
 // Number of distributed hosts
-const int nHosts = 18;
+const int nHosts = 4;
 
 // Size of each batch on each host
 const int batch_size = nTraining / (nHosts - 1);
@@ -363,6 +363,7 @@ void test_model(int node){
 
 int main (int argc, char *argv[])
 {
+  createTrainTestCSVs(60000, 10000, "4 - OpenMPI Multilayer Perceptron");
   int i, tag=1, tasks, iam;
   int start = 0, end = 0;
   MPI_Status status;
