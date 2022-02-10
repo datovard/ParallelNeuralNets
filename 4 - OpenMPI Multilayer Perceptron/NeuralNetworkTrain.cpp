@@ -31,7 +31,7 @@ const string report_train_fn = "output/training-report.dat";
 const string report_test_fn = "output/testing-report.dat";
 
 // Number of training samples
-const int nTraining = 11000;
+const int nTraining = 12000;
 
 // Number of testing samples
 const int nTesting = 10000;
@@ -40,7 +40,7 @@ const int nTesting = 10000;
 const int nHosts = 12;
 
 // Size of each batch on each host
-const int batch_size = nTraining / (nHosts - 1);
+const int batch_size = nTraining / nHosts;
 
 // Image size in MNIST database
 const int width = 28;
@@ -374,9 +374,37 @@ int main (int argc, char *argv[])
     MPI_Bcast(original_w1, n1*n2, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(original_w2, n2*n3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 
+    start = (iam) * batch_size;
+    end = ((iam) * batch_size) + batch_size - 1;
+  
+    copy_array(original_w1, w1, n1 * n2);
+    copy_array(original_w2, w2, n2 * n3);
+    
+    cout << "Starting training on node: " << iam << endl;
+    for(int epoch = 1; epoch <= epochs; epoch++){
+      for(int sample = start; sample <= end; sample++){
+        // Getting (image, label)
+        input(in_dat[sample], out_dat[sample]);
+
+        // Learning process: Perceptron (Forward procedure) - Back propagation
+        int nIterations = learning_process();
+        if((sample - start + 1) % ((end-start+1)/5) == 0)
+            cout << "Node " << iam << " on sample " << (sample-start) << " of " << (end-start) << endl;
+      }
+    }
+    cout << "Training finished on node " << iam << endl;
+    
+    copy_array(w1, final_w1, n1 * n2);
+    copy_array(w2, final_w2, n2 * n3);
+    get_weights_difference(original_w1, w1, difference_w1, n1 * n2, nHosts - 1);
+    get_weights_difference(original_w2, w2, difference_w2, n2 * n3, nHosts - 1);
+
     if(iam == 0){
       copy_array(original_w1, final_w1, n1 * n2);
       copy_array(original_w2, final_w2, n2 * n3);
+
+      add_cumulative_array(difference_w1, final_w1, n1*n2);
+      add_cumulative_array(difference_w2, final_w2, n2*n3);
 
       for(int i = 1; i <= nHosts - 1; i++){
         MPI_Recv(difference_w1, n1 * n2, MPI_DOUBLE, i, tag, MPI_COMM_WORLD, &status);
@@ -395,31 +423,6 @@ int main (int argc, char *argv[])
       test_model(iam);
       write_matrix(model_fn);
     } else {
-      start = (iam-1) * batch_size;
-      end = ((iam-1) * batch_size) + batch_size - 1;
-    
-      copy_array(original_w1, w1, n1 * n2);
-      copy_array(original_w2, w2, n2 * n3);
-     
-      cout << "Starting training on node: " << iam << endl;
-      for(int epoch = 1; epoch <= epochs; epoch++){
-        for(int sample = start; sample <= end; sample++){
-          // Getting (image, label)
-          input(in_dat[sample], out_dat[sample]);
-
-          // Learning process: Perceptron (Forward procedure) - Back propagation
-          int nIterations = learning_process();
-	        if((sample - start + 1) % ((end-start+1)/5) == 0)
-              cout << "Node " << iam << " on sample " << (sample-start) << " of " << (end-start) << endl;
-        }
-      }
-      cout << "Training finished on node " << iam << endl;
-      
-      copy_array(w1, final_w1, n1 * n2);
-      copy_array(w2, final_w2, n2 * n3);
-      get_weights_difference(original_w1, w1, difference_w1, n1 * n2, nHosts - 1);
-      get_weights_difference(original_w2, w2, difference_w2, n2 * n3, nHosts - 1);
-
       MPI_Send(difference_w1, n1 * n2, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
       MPI_Send(difference_w2, n2 * n3, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
     }
