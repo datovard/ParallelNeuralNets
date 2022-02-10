@@ -1,14 +1,6 @@
-// ejecutar con mpirun -np 4 mpi_test
-// mpicc OpenMPI-Test.c -o OpenMPI-Test && mpirun -np 6 --hostfile mpi-hosts OpenMPI-Test
-
-#include <stdio.h>
-#include <string.h>
-#include <unistd.h>
-#include <limits.h>
 #include <sys/time.h>
 #include <mpi.h>
 #include "../util/FileReading.cpp"
-
 #include <iostream>
 #include <fstream>
 #include <cstring>
@@ -39,13 +31,13 @@ const string report_train_fn = "output/training-report.dat";
 const string report_test_fn = "output/testing-report.dat";
 
 // Number of training samples
-const int nTraining = 150;
+const int nTraining = 11000;
 
 // Number of testing samples
 const int nTesting = 10000;
 
 // Number of distributed hosts
-const int nHosts = 4;
+const int nHosts = 12;
 
 // Size of each batch on each host
 const int batch_size = nTraining / (nHosts - 1);
@@ -363,7 +355,6 @@ void test_model(int node){
 
 int main (int argc, char *argv[])
 {
-  createTrainTestCSVs(60000, 10000, "4 - OpenMPI Multilayer Perceptron");
   int i, tag=1, tasks, iam;
   int start = 0, end = 0;
   MPI_Status status;
@@ -374,50 +365,19 @@ int main (int argc, char *argv[])
   MPI_Init(&argc, &argv);
   MPI_Comm_size(MPI_COMM_WORLD, &tasks);
   MPI_Comm_rank(MPI_COMM_WORLD, &iam);
-    char hostname[HOST_NAME_MAX];
-    char username[LOGIN_NAME_MAX];
-    gethostname(hostname, HOST_NAME_MAX);
-    getlogin_r(username, LOGIN_NAME_MAX);
-
     read_dataset();
 
     init_arrays();
 
-    if(iam == 0){
-      fill_weights();
-
-      copy_array(original_w1, final_w1, n1 * n2);
-      copy_array(original_w2, final_w2, n2 * n3);
-    } else {
-      start = (iam-1) * batch_size;
-      end = ((iam-1) * batch_size) + batch_size - 1;
-    }
+    fill_weights();
 
     MPI_Bcast(original_w1, n1*n2, MPI_DOUBLE, 0, MPI_COMM_WORLD);
     MPI_Bcast(original_w2, n2*n3, MPI_DOUBLE, 0, MPI_COMM_WORLD);
-    
-    if(iam != 0){
-      copy_array(original_w1, w1, n1 * n2);
-      copy_array(original_w2, w2, n2 * n3);
 
-      for(int epoch = 1; epoch <= epochs; epoch++){
-        for(int sample = start; sample <= end; sample++){
-          // Getting (image, label)
-          input(in_dat[sample], out_dat[sample]);
+    if(iam == 0){
+      copy_array(original_w1, final_w1, n1 * n2);
+      copy_array(original_w2, final_w2, n2 * n3);
 
-          // Learning process: Perceptron (Forward procedure) - Back propagation
-          int nIterations = learning_process();
-        }
-      }
-      
-      copy_array(w1, final_w1, n1 * n2);
-      copy_array(w2, final_w2, n2 * n3);
-      get_weights_difference(original_w1, w1, difference_w1, n1 * n2, nHosts - 1);
-      get_weights_difference(original_w2, w2, difference_w2, n2 * n3, nHosts - 1);
-
-      MPI_Send(difference_w1, n1 * n2, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
-      MPI_Send(difference_w2, n2 * n3, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
-    } else {
       for(int i = 1; i <= nHosts - 1; i++){
         MPI_Recv(difference_w1, n1 * n2, MPI_DOUBLE, i, tag, MPI_COMM_WORLD, &status);
         MPI_Recv(difference_w2, n2 * n3, MPI_DOUBLE, i, tag, MPI_COMM_WORLD, &status);
@@ -434,6 +394,34 @@ int main (int argc, char *argv[])
 
       test_model(iam);
       write_matrix(model_fn);
+    } else {
+      start = (iam-1) * batch_size;
+      end = ((iam-1) * batch_size) + batch_size - 1;
+    
+      copy_array(original_w1, w1, n1 * n2);
+      copy_array(original_w2, w2, n2 * n3);
+     
+      cout << "Starting training on node: " << iam << endl;
+      for(int epoch = 1; epoch <= epochs; epoch++){
+        for(int sample = start; sample <= end; sample++){
+          // Getting (image, label)
+          input(in_dat[sample], out_dat[sample]);
+
+          // Learning process: Perceptron (Forward procedure) - Back propagation
+          int nIterations = learning_process();
+	        if((sample - start + 1) % ((end-start+1)/5) == 0)
+              cout << "Node " << iam << " on sample " << (sample-start) << " of " << (end-start) << endl;
+        }
+      }
+      cout << "Training finished on node " << iam << endl;
+      
+      copy_array(w1, final_w1, n1 * n2);
+      copy_array(w2, final_w2, n2 * n3);
+      get_weights_difference(original_w1, w1, difference_w1, n1 * n2, nHosts - 1);
+      get_weights_difference(original_w2, w2, difference_w2, n2 * n3, nHosts - 1);
+
+      MPI_Send(difference_w1, n1 * n2, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
+      MPI_Send(difference_w2, n2 * n3, MPI_DOUBLE, 0, tag, MPI_COMM_WORLD);
     }
 
   MPI_Finalize();
